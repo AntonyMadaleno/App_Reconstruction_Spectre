@@ -50,7 +50,10 @@ try:
 
         cmf = ("target", WL, target, light_color)
 
-        coefficients = curve_rectruction(cmf, curves, float(np.min(WL)), float(np.max(WL)) , float(np.abs(WL[1]- WL[0])) )
+        coefficients, rest = curve_rectruction(cmf, curves, float(np.min(WL)), float(np.max(WL)) , float(np.abs(WL[1]- WL[0])) )
+
+        print(coefficients)
+        print(coefficients.shape)
         coef_norm = coefficients / np.max(coefficients)
 
         return coef_norm
@@ -89,7 +92,7 @@ try:
         
         return np.dot(M, XYZ)
     #========================================================================================================================================================================================================
-    def RGB_reconstruction():
+    """def RGB_reconstruction():
 
         Chroma = np.array(
             [
@@ -123,9 +126,62 @@ try:
 
         M = Calc_XYZ2RGB_Matrix(Chroma, RW)
 
-        RGB = (XYZ_2_RGB_Space(xyz, M) * 255.0).astype(np.uint8)
+        RGB = (XYZ_2_RGB_space(xyz, M, Gamma = float( gamma_entry.get() )) * 255.0).astype(np.uint8)
 
         im = Image.fromarray(RGB)
+        photo = ImageTk.PhotoImage(image=im)
+        result_display.config(image=photo)
+        result_display.image = photo
+
+        root.update()
+
+        return"""
+    
+    def RGB_reconstruction():
+
+        Chroma = np.array(
+            [
+                [0.6400, 0.3300],
+                [0.3000, 0.6000],
+                [0.1500, 0.0600]
+            ]
+        )
+
+        RW = np.array([0.95047, 1.00000, 1.08883]) #D65
+
+        curves = []
+        datas = []
+
+        for band in bands:
+            curves.append((band[0], band[1], band[2], base_color))
+            datas.append(band[3])
+
+        WL, XYZ_curves = load_cmf()
+
+        KR = fit_main_curves(WL, XYZ_curves[:,0], curves)
+        KG = fit_main_curves(WL, XYZ_curves[:,1], curves)
+        KB = fit_main_curves(WL, XYZ_curves[:,2], curves)
+
+        xyz = np.zeros((datas[0].shape[0], datas[0].shape[1], 3)).astype(float)
+
+        for i in range(np.size(KR)):
+            xyz[:,:,0] += KR[i] * datas[i]
+            xyz[:,:,1] += KG[i] * datas[i]
+            xyz[:,:,2] += KB[i] * datas[i]
+
+        #M = Calc_XYZ2RGB_Matrix(Chroma, RW)
+
+        #RGB = (XYZ_2_RGB_space(xyz, M, Gamma = float( gamma_entry.get() )) * 255.0).astype(np.uint8)
+
+        g = 1.0/ float(gamma_entry.get())
+
+        xyz[:,0] = (xyz[:,0]**g) * 255 / np.max(xyz[:,0])
+        xyz[:,1] = (xyz[:,1]**g) * 255 / np.max(xyz[:,1])
+        xyz[:,2] = (xyz[:,2]**g) * 255 / np.max(xyz[:,2])
+
+        xyz = np.clip(xyz, a_max= 255, a_min=0)
+
+        im = Image.fromarray(xyz.astype(np.uint8))
         photo = ImageTk.PhotoImage(image=im)
         result_display.config(image=photo)
         result_display.image = photo
@@ -202,6 +258,12 @@ try:
     # Create a button to fit the curve
     fit_button = Button(rebuild_inputs, text="RGB Reconstruction", command=RGB_reconstruction, font=default_font, relief = "flat", bg = base_color, activebackground = "#33cccc")
     fit_button.grid(row = 3, column = 0, columnspan = 2, padx= 5, pady= 5)
+
+    #Create an input for gamma parameter
+    Label(rebuild_inputs, text="Gamma (2.2 for D65):", font=default_font, foreground= light_color, bg = dark_color).grid(row=0, column=0, sticky='w', padx=5, pady=5)
+    gamma_entry = Entry(rebuild_inputs, font=default_font, foreground= light_color, bg = dark_color)
+    gamma_entry.grid(row=0, column=1, padx=5, pady=5)
+    gamma_entry.insert(0, "2.2")  # Default value
 
     # Run the Tkinter event loop
 

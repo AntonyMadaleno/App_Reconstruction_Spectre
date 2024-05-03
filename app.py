@@ -11,6 +11,20 @@ from reconstruction import *
 definition = 1000
 curves = []  # List to store curve information: (name, x, y, color)
 main_curve = []
+
+xlims = (300.0, 1000.0)
+
+#========================================================================================================================================================================================================
+def gen_color(spec, waves):
+
+    XYZ = monoSpec_2_CMF_XYZ(spec, waves, cmf = 'libHSI/data/#_360_830_2deg.npy')
+    x = XYZ[0,0] / np.sum(XYZ)
+    y = XYZ[0,1] / np.sum(XYZ)
+    RGB = (monoXYZ_2_RGB(XYZ, RGB_space="sRGB", Gamma= 1.0) * 255.0).astype(np.uint8)
+    # Convert RGB to hexadecimal color code
+    hex_color = '#%02x%02x%02x' % (RGB[0,0], RGB[0,1], RGB[0,2])
+
+    return hex_color
 #========================================================================================================================================================================================================
 def fwhm2std_dev(fwhm):
     return float(fwhm) / 2.355
@@ -22,34 +36,44 @@ def load_spd_file(file_path):
     # Load data from .spd file
     data = np.loadtxt(file_path)
     name = file_path.split('/')[-1].split('.')[0]  # Extract file name as curve name
-    x = data[:, 0]
-    y = data[:, 1]
-    return name, x, y
+    waves = data[:, 0]
+    spec = data[:, 1]
+    return name, waves, spec
 #========================================================================================================================================================================================================
 def plot_curves():
+
+    global xlims
+
     ax.clear()
     for curve in curves:
         name, x, y, color = curve
-        ax.plot(x, y, color=color, label=name)
+        ax.plot(x, y, color=color, alpha = 0.5, lw = 3, label=name)
 
     ax.set_xlabel('wavelength (nm)', color=base_color)
-    ax.set_ylabel('y', color=base_color)
-    ax.set_title('Intersity per wavelength', color=base_color)
+    ax.set_ylabel('Y', color=base_color)
+    ax.set_title('Intensity per wavelength', color=base_color)
     ax.grid(True)
+
+    xlims = fig.get_axes()[0].get_xlim()
+    fig_main.get_axes()[0].set_xlim(xlims)
     plt.tight_layout()
     canvas.draw()
 #========================================================================================================================================================================================================
 def plot_selected(index_main = None):
+    global xlims
+
     ax_main.clear()
 
     if len(main_curve) > 0:
         name, x, y, color = main_curve[0]
-        ax_main.plot(x, y, color=color, label=name)
+        ax_main.plot(x, y, color=color, alpha = 0.5, lw = 3, label=name)
 
     ax_main.set_xlabel('wavelength (nm)', color=base_color)
-    ax_main.set_ylabel('y', color=base_color)
+    ax_main.set_ylabel('Y', color=base_color)
     ax_main.set_title('Intensity per wavelength', color=base_color)
     ax_main.grid(True)
+
+    fig_main.get_axes()[0].set_xlim(xlims)
     plt.tight_layout()
     canvas_main.draw()
 #========================================================================================================================================================================================================
@@ -59,10 +83,11 @@ def add_curve():
     higher_bound = float(upper_bound_entry.get())
     center = float(center_entry.get())
     fwhm = float(fwhm_entry.get())
-    color = color_var.get()
-
     x = np.linspace(lower_bound, higher_bound, definition)
     y = gaussian_distribution(x, center, fwhm, float(coeff_entry.get()))
+
+    color = gen_color(x,y)
+
     curves.append((name, x, y, color))
 
     plot_curves()
@@ -74,9 +99,10 @@ def load_curves():
         spd_files = [file for file in os.listdir(folder_path) if file.endswith('.spd')]
         for spd_file in spd_files:
             file_path = os.path.join(folder_path, spd_file)
-            name, x, y = load_spd_file(file_path)
-            color = color_var.get()  # Get the selected color
-            curves.append((name, x, y, color))
+            name, waves, spec = load_spd_file(file_path)
+            color = gen_color(spec, waves)
+            curves.append((name, waves, spec, color))
+
         plot_curves()
         update_curve_list()
 #========================================================================================================================================================================================================
@@ -101,12 +127,21 @@ def select_main_curves():
     update_curve_list()
 #========================================================================================================================================================================================================
 def fit_main_curves():
-    coefficients = curve_rectruction(main_curve[0], curves, float(low_bound_norm_entry.get()), float(high_bound_norm_entry.get()) , float(definition_norm_entry.get()) )
 
-    coef_norm = coefficients / np.max(coefficients)
+    coefficients = None
+    coef_norm = None
+    rest = None
 
-    for i in range(0, np.size(coef_norm)):
-        print(curves[i][0] + f" : {coef_norm[i]}")    
+    if (method.get() == "default"):
+        coefficients, rest = curve_rectruction(main_curve[0], curves, float(low_bound_norm_entry.get()), float(high_bound_norm_entry.get()) , float(definition_norm_entry.get()) )
+        coef_norm = coefficients / np.max(coefficients)
+        return
+    
+    elif(method.get() == "Scalar"):
+        coefficients, rest = curve_rectruction_scalar(main_curve[0], curves, float(low_bound_norm_entry.get()), float(high_bound_norm_entry.get()) , float(definition_norm_entry.get()) )
+        coef_norm = coefficients / np.max(coefficients)
+        return
+
 
 #========================================================================================================================================================================================================
 def update_curve_list():
@@ -114,11 +149,6 @@ def update_curve_list():
     for i, curve in enumerate(curves):
         name, _, _, _ = curve
         curve_list.insert(END, name)
-#========================================================================================================================================================================================================
-def choose_color():
-    color = colorchooser.askcolor()[1]
-    color_var.set(color)
-    color_label['bg'] = color_var.get()
 #========================================================================================================================================================================================================
 def load_cmf():
     # open dialogue to choose the file (CSV)
@@ -207,17 +237,6 @@ coeff_entry = Entry(input_gaussian_parameters, font=default_font, foreground= li
 coeff_entry.grid(row=5, column=1, padx=5, pady=5)
 coeff_entry.insert(1, "1.0")  # Default value
 
-# Create a color selection dropdown
-Label(input_gaussian_parameters, text="Color:", font=default_font, foreground= light_color, bg = dark_color).grid(row=6, column=0, sticky='w', padx=5, pady=5)
-color_var = StringVar()
-color_var.set("#33cc88")  # Default color
-color_menu_frame = Frame(input_gaussian_parameters, bg = dark_color)
-color_menu_frame.grid(row=6, column=1, padx=5, pady=5)
-color_button = Button(color_menu_frame, text="Choose Color", command=choose_color, font=default_font, relief = "flat", bg = base_color, activebackground = "#33cccc")
-color_button.grid(row=0, column=0)
-color_label = Label(color_menu_frame, textvariable=" ", font=default_font, foreground= light_color, relief="groove", width=6, bg = color_var.get())
-color_label.grid(row=0, column=1, padx=(5,0))
-
 # Create buttons for adding curves
 add_button = Button(input_gaussian_parameters, text="Add Curve", command=add_curve, font=default_font, relief = "flat", bg = base_color, activebackground = "#33cccc")
 add_button.grid(row=7, column=0, columnspan = 1, padx=5, pady=5)
@@ -275,6 +294,15 @@ definition_norm_entry.insert(1, "1.0")  # Default value
 # Create a button to fit the curve
 fit_button = Button(fitting_inputs, text="Curve fitting", command=fit_main_curves, font=default_font, relief = "flat", bg = base_color, activebackground = "#33cccc")
 fit_button.grid(row = 3, column = 0, columnspan = 2, padx= 5, pady= 5)
+
+# Create a option menu to choose fitting optimisation
+methods_names = ["Default", "Scalar", "SMA"]
+
+method = StringVar()
+method.set(methods_names[0])
+
+method_menu = OptionMenu(fitting_inputs, method, *methods_names)
+method_menu.grid(row = 4, rowspan = 3, column= 0, columnspan= 2, padx= 5, pady= 5)
 
 ### GRAPH PLOTS ###
 
