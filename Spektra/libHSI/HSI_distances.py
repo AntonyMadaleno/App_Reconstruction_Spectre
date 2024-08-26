@@ -9,29 +9,29 @@ Created on Tue Mar 07 14:30:02 2017
 
 
     Functions :
-        div_KL          : Kullback-Leibler measure of information 
-        pseudo_div_KL   : Kullback-Leibler pseudo-divergence : total divergence
-        pseudo_div_KL2  : Kullback-Leibler pseudo-divergence returning shape and intensity differences
-        div_Hellinger   : 
-        dist_Minkowski  : order-p Minkowski distance
+        div_KL                  : Kullback-Leibler measure of information 
+        pseudo_div_KL           : Kullback-Leibler pseudo-divergence : total divergence
+        pseudo_div_KL2          : Kullback-Leibler pseudo-divergence returning shape and intensity differences
+        div_Hellinger           : 
+        dist_Minkowski          : order-p Minkowski distance
         dist_euclidienne_cum : Euclidean distance between cumulated spectra
         dist_euclidienne_cum_derive : Sum of Euclidean distances between cumulated spectra cumulated in the 2 spectral directions
-        dist_SAM        : Spectral Angle Mapper
-        dist_SID        : Spectral Information Divergence
-        dist_SGA        : Spectral Gradient Angle
-        dist_SCA        : Spectral Correlation Angle
-        chi_square      : order n chi square measure
-        bhatta          : Bhattacharyya Distance
-        div_Csiszar     : Csiszar measure of information defined by bhatia(2013)
-        pseudo_div_Csiszar2r : new Csiszar divergence as defined by Bathia(2013) adapted to the KLPD framework
+        dist_SAM                : Spectral Angle Mapper
+        dist_SID                : Spectral Information Divergence
+        dist_SGA                : Spectral Gradient Angle
+        dist_SCA                : Spectral Correlation Angle
+        dist_chi_square         : order n chi square measure
+        dist_bhatta             : Bhattacharyya Distance
+        div_Csiszar             : Csiszar measure of information defined by bhatia(2013)
+        pseudo_div_Csiszar2r    : new Csiszar divergence as defined by Bathia(2013) adapted to the KLPD framework
         
-        GlobalSpectralStats : standard deviation, Dissymetry and Flattening moments of a spectral set (global moments)
-        StructSpectralStats : variance-covariance Matrix of a spectral set from a BHSD relative to a Median spectrum (structural moment)
+        GlobalSpectralStats     : standard deviation, Dissymetry and Flattening moments of a spectral set (global moments)
+        StructSpectralStats     : variance-covariance Matrix of a spectral set from a BHSD relative to a Median spectrum (structural moment)
 
     status : Ok (28/09/2017)
-             To add/modify : to modify each distance function in order to transform the sums into integrals
-                             to embedd preprocessing to allow distance processing between 1 reference and a spectral set
-                             to embedd Dynamic Time Warping approach for comparison purposes.
+             To add/modify      :   to modify each distance function in order to transform the sums into integrals
+                                    to embedd preprocessing to allow distance processing between 1 reference and a spectral set
+                                    to embedd Dynamic Time Warping approach for comparison purposes.
 
     date   : 28/09/2017
     
@@ -88,7 +88,7 @@ def pseudo_div_KL(H1, H2, resolution=1.0):
         :type H2: float numpy array
     Returns:
     ========
-        :return: Pseudo-Divergence spectrale de Kullback-Leible
+        :return: Pseudo-Divergence spectrale de Kullback-Leibler
         :rtype: numpy.float
     """
     if (H1.shape[0] == H1.size):
@@ -231,7 +231,7 @@ def dist_Minkowski(H1,H2,p=2,resolution=1.0):
 
 
 ##============================================================================
-def dist_euclienne_cum_derive(H1,H2):
+def dist_euclidienne_cum_derive(H1,H2):
     '''
      function which provide de sum of two
 	 Euclidean of cumulative spectrum distance function (ECS)
@@ -246,21 +246,21 @@ def dist_euclienne_cum_derive(H1,H2):
 
         :Example: D=dist_euclienne_cum(H1,H2)
     '''
-    H1_cum = np.cumsum(H1)
-    H2_cum = np.cumsum(H2)
-    A = np.sqrt(np.sum((np.abs(H1_cum-H2_cum))**2.0))
+    H1_cum = np.cumsum( H1 )
+    H2_cum = np.cumsum( H2 )
+    A = np.sqrt( np.sum( ( np.abs( H1_cum - H2_cum ) )**2.0))
 
 
-    H1_cum = np.cumsum(H1[::-1])
-    H2_cum = np.cumsum(H2[::-1])
-    B = np.sqrt(np.sum((np.abs(H1_cum-H2_cum))**2.0))
+    H1_cum = np.cumsum( H1[::-1] )
+    H2_cum = np.cumsum( H2[::-1] )
+    B = np.sqrt( np.sum( ( np.abs( H1_cum - H2_cum ) )**2.0 ) )
 
     return A+B
 
 
 ##============================================================================
 
-def dist_euclienne_cum(H1,H2, sens=0):
+def dist_euclidienne_cum(H1,H2, sens=0):
    '''
    Euclidean of cumulative spectum distance function (ECS).
 
@@ -278,7 +278,7 @@ def dist_euclienne_cum(H1,H2, sens=0):
        H2=H2[::-1]
    H1_cum = np.cumsum(H1)
    H2_cum = np.cumsum(H2)
-   return np.sqrt(np.sum((np.abs(H1_cum-H2_cum))**2.0))
+   return np.sqrt( np.sum( ( np.abs( H1_cum - H2_cum ) )**2.0) )
 
 
 ##============================================================================
@@ -296,9 +296,9 @@ def dist_SAM(H1, H2, resolution = 1.0):
         :rtype: numpy.float
     """
 
-    print((H1*H2).shape)
-    print((H1**2).shape)
-    print((H2**2).shape)
+    # print((H1*H2).shape)
+    # print((H1**2).shape)
+    # print((H2**2).shape)
 
     A = np.trapz(H1*H2, dx= resolution, axis=0)/((np.trapz(H1**2, dx= resolution, axis=0)**(1.0/2.0))*(np.trapz(H2**2.0, dx= resolution, axis=0)**(1.0/2.0)))
 
@@ -326,7 +326,7 @@ def dist_SID(H1,H2):
     H11[H11<10.0**-64] = 10**-64
     H22[H22<10.0**-64] = 10**-64
 
-    return (((H11/H11.sum())-(H22/H22.sum()))*(np.log(H11/H11.sum())-np.log(H22/H22.sum()))).sum()
+    return ( ( ( H11 / H11.sum() ) - ( H22 / H22.sum() ) ) * ( np.log( H11 / H11.sum() ) - np.log( H22 / H22.sum() ) ) ).sum()
 
 
 
@@ -366,17 +366,17 @@ def dist_SCA(H1,H2):
         :return: distance
         :rtype: numpy.float
     """
-    H1n = H1-np.mean(H1);
-    H2n = H2-np.mean(H2);
+    H1n = H1-np.mean(H1)
+    H2n = H2-np.mean(H2)
 
-    c = (H1n*H2n).sum()/(((((H1n)**2).sum())**(1.0/2.0))*((((H2n)**2).sum())**(1.0/2.0)));
+    c = (H1n*H2n).sum()/(((((H1n)**2).sum())**(1.0/2.0))*((((H2n)**2).sum())**(1.0/2.0)))
     if c>1.0: c = 1.0
-    return np.arccos((c+1.0)/2.0);
+    return np.arccos((c+1.0)/2.0)
 
 
 
 ##============================================================================
-def chi_square(H1,H2,n):
+def dist_chi_square(H1,H2,n):
     """
     chi square  distance function, order n.
 
@@ -389,10 +389,10 @@ def chi_square(H1,H2,n):
        :return: distance
        :rtype: numpy.float
     """
-    return  (1/n)*np.sum((((H1 - H2)**2)/((H1+H2)**(2/n))))
+    return  (1/n) * np.sum( ( ( ( H1 - H2 )**2 ) / ( ( H1 + H2 )**(2/n) ) ) )
 
 
-def bhatta(H1, H2):
+def dist_bhatta(H1, H2):
     """
     Bhattacharyya distance function.
 
@@ -406,7 +406,7 @@ def bhatta(H1, H2):
     return -1*np.log(np.sum((H1*H2)**(1/2)))
 
 ##============================================================================
-def SAM_L2(H1, H2, resolution=1.0):
+def dist_SAM_L2(H1, H2, resolution=1.0):
     """
      Process the SAM and L2 measures in order to construct histogram of Spectral
      Difference (unadapted alternative to KL-pseudo-divergence )
@@ -469,8 +469,8 @@ def SAM_L2(H1, H2, resolution=1.0):
     dist_shape  = dist_SAM(H1, H2, resolution).reshape(nbsamples,1)
     dist_energy = dist_Minkowski(H1, H2, 2, resolution).reshape(nbsamples,1)
     
-    print(dist_shape.shape)
-    print(dist_energy.shape)
+    # print(dist_shape.shape)
+    # print(dist_energy.shape)
 
     dist = np.concatenate ( (dist_shape, dist_energy), axis=0 )
     dist = dist.reshape( nbsamples , 2)
@@ -522,7 +522,7 @@ def GlobalSpectralStats(Spectral_Set, Median_Spectrum, Spectral_Ref, Resolution=
     Algebraic_Dist = Tau_table * Dist2Median
     
     ## the global statistics
-    StdDev   = np.sqrt(np.sum( (Algebraic_Dist)**2 ) / count)
+    StdDev  = np.sqrt(np.sum( (Algebraic_Dist)**2 ) / count)
     Dissym  = (np.sum( (Algebraic_Dist)**3 ) / count) / (StdDev**3)
     Flatng  = (np.sum( (Algebraic_Dist)**4 ) / count) / (StdDev**4)
     

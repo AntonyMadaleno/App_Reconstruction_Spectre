@@ -425,7 +425,7 @@ def multiSpec2CMF_XYZ(SpecImg, Waves, reflectance = False, ligthning='D65', cmf=
     CMF_Z = np.load(cmf.replace('#', 'Z'))[First_CIE_wave:Last_CIE_wave]
 
     ## Read the light spectrum (from 300 to 780nm, step = 5nm)
-    light_Spectrum = np.load('libHSI\\data\\I_'+ligthning+'_300-780.npy')[(12+First_CIE_wave):12+Last_CIE_wave]
+    light_Spectrum = np.load(cmf.replace('#_360_830_2deg', f"I_{ligthning}_300-780"))[(12+First_CIE_wave):12+Last_CIE_wave]
             
     ## interpolate the CIE and lightning curves to be adapted to the spectral sensor
     Waves_CIE    = np.arange(360.0 + First_CIE_wave*5.0 , 361.0+(Last_CIE_wave-1)*5.0 ,5) ## the measurement point for the CIE curves
