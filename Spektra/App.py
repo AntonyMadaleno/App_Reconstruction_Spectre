@@ -14,11 +14,17 @@ import pandas as pd
 import spectral as spy
 import os
 import cv2
+import pywt
+import pickle
+import lzma
 
 from libHSI.HSI_library import *
 from libHSI.HSI_distances import *
 
 from colour.plotting import plot_chromaticity_diagram_CIE1931
+
+from reconstruction import *
+from libHSI.HSI_reconstruction import *
 
 #================================================================================================================================================================================
 # App variable / access trough local functions only
@@ -40,6 +46,57 @@ Theme_file          = "dark_theme.ini"                                      # re
         #---------------#
         # I/O FUNCTIONS #
         #---------------#
+
+#================================================================================================================================================================================
+
+def loadEnvi_Compressed():
+    '''
+       load a spectral image and return an array of spectra
+
+       Return:
+           Dict         : the  Spy structure for hyperspectral img
+           Img          : the spectral image as an array of spectra (nblg x nbcol x nb_wavelengths) of double real
+           Wavelist     : the corresponding wavelength list
+           Resolution   : the spectral resolution (for integration purpose) 
+
+    '''
+
+    # Step 1 Open a dialogue to ask for the file to be opened
+    (f1, f2) = filedialog.askopenfilenames()
+
+    if (f1.endswith(".hdr")):
+        file_hdr = f1
+        file_img = f2
+    else:
+        file_hdr = f2
+        file_img = f1
+
+    # Step 2 Open the header
+    Dict = spy.io.envi.read_envi_header(file= file_hdr)                 # Open the header
+
+    # Step 3 Load and uncompress the data
+    Dwt = None
+    with lzma.open(file_img, 'r') as f:
+        Dwt = np.load(f)
+
+    Slices = None
+    with open(filedialog.askopenfilename(), 'rb') as f:
+        Slices = pickle.load(f)
+
+    Coeffs  = pywt.array_to_coeffs(Dwt, Slices, output_format='wavedec2')
+    Img     = pywt.waverec2(Coeffs, 'db1')
+
+    nbands  = int( Dict[ 'bands' ]   )
+    nlines  = int( Dict[ 'lines' ]   )
+    nrows   = int( Dict[ 'samples' ] ) 
+
+    Img = Img[ :(nlines * nrows), :nbands]
+    Img = Img.reshape( (nlines, nrows, nbands) )
+
+    Wavelist    = np.array(Dict['wavelength']).astype(float)        # Get the wavelist
+    Resolution  = Wavelist[1] - Wavelist[0]                         # Get the resolution of the sampling (only useful if sampling is homogenous)
+
+    return (Dict, Img, Wavelist, Resolution)
 
 #================================================================================================================================================================================
 
@@ -72,6 +129,44 @@ def loadEnvi():
     Resolution = Wavelist[1] - Wavelist[0]                              # Get the resolution of the sampling (only useful if sampling is homogenous)
 
     return (Dict, Img, Wavelist, Resolution)
+
+#================================================================================================================================================================================
+
+def loadEnvi_with_Response():
+
+    '''
+       load a spectral image and return an array of spectra
+
+       Return:
+           Dict         : the  Spy structure for hyperspectral img
+           Img          : the spectral image as an array of spectra (nblg x nbcol x nb_wavelengths) of double real
+           Wavelist     : the corresponding wavelength list
+           Resolution   : the spectral resolution (for integration purpose) 
+
+    '''
+
+    # Step 1 Open a dialogue to ask for the file to be opened
+    (f1, f2) = filedialog.askopenfilenames()
+
+    if (f1.endswith(".hdr")):
+        file_hdr = f1
+        file_img = f2
+    else:
+        file_hdr = f2
+        file_img = f1
+
+    # Step 2 Open the file using spy
+    Dict = spy.io.envi.open(file= file_hdr, image= file_img)            # Open the data as spy structure
+    Img = Dict.load()                                                   # Load the array of (nblg x nbcol x nb_waves) as numpy array of double
+    Wavelist= np.array(Dict.bands.centers)                              # Get the wavelist
+    Resolution = Wavelist[1] - Wavelist[0]                              # Get the resolution of the sampling (only useful if sampling is homogenous)
+
+    response_file = filedialog.askopenfilenames()
+    Responses = np.loadtxt(response_file)
+
+    return (Dict, Img, Wavelist, Resolution)
+
+    return
 
 #================================================================================================================================================================================
 
@@ -117,15 +212,17 @@ def loadSpectrum():
        load one spectrum
 
        Return:
-           Spectra      : the spectral reponse of the system used to capture the band
+           Spectra      : the spectral reponse of the system used to capture the band [:,0] Waves [:,1] Spectra
     '''
 
     file_spd = filedialog.askopenfilename()
 
     # Check Data formats
 
-    # Load sptral response from the system from .spd file
+    # Load spectral response from the system from .spd file
     return np.loadtxt(file_spd).astype(np.double)
+
+#================================================================================================================================================================================
 
 def saveEnvi(Bands, Waves):
     '''
@@ -210,6 +307,27 @@ def Load_Ref_Band():
     global Band_ref, Spectra_ref
     Band_ref, Spectra_ref, __ = loadBand()
 
+    Band_ref_255 = Band_ref.astype(float) * 255.0 / np.max(Band_ref.astype(float))
+
+    img = Image.fromarray(Band_ref_255.astype(np.uint8), 'L')
+
+    # Automatic resizing
+    h, w = Band_ref.shape
+    max_w = 720.0
+    max_h = 480.0
+
+    coef = min( max_w/float(w), max_h/float(h))
+
+    nw, nh = round(coef * w), round(coef * h)
+
+    img = img.resize( ( nw, nh ) )
+
+    photo = ImageTk.PhotoImage(image=img)
+    Ref_Image_display.config(image=photo)
+    Ref_Image_display.image = photo
+
+    root.update()
+
 #================================================================================================================================================================================
 
 def Load_Ref_Spectrum():
@@ -226,8 +344,7 @@ def Save_ENVI():
 
 def Save_RGB():
     RGB = Display_RGB().astype(np.uint8)
-    filesave = filedialog.asksaveasfilename()
-    cv2.imwrite(filesave, cv2.cvtColor(RGB, cv2.COLOR_RGB2BGR) )
+    cv2.imwrite(filename = filedialog.asksaveasfilename(defaultextension = 'png'), img = cv2.cvtColor(RGB, cv2.COLOR_RGB2BGR) )
 
 #================================================================================================================================================================================
 
@@ -240,9 +357,9 @@ def Display_Band():
     # Display the band in the display area of the app
     Band = Bands[:,:,index].reshape( (Bands.shape[0], Bands.shape[1]) )
 
-    Band = Band * 255 / np.max(Bands)
+    Band_255 = Band.astype(float) * 255.0 / np.max(Bands).astype(float)
 
-    img = Image.fromarray(Band.astype(np.uint8), 'L')
+    img = Image.fromarray(Band_255.astype(np.uint8), 'L')
 
     # Automatic resizing
     h, w = Band.shape
@@ -265,12 +382,24 @@ def Display_Band():
 
 def Display_RGB():
 
+    global Bands
+
+    if(Recal.get()):
+        # Take first band as reference        
+        Ref = Bands[:,:,0]
+
+        # For each bands align
+        for i in range (1, Bands.shape[2]):
+            Bands[:,:,i] = Recalage(Ref, Bands[:,:,i])
+
     if (RGB_method.get() == "3 Bands"):
         return Display_RGB_3Bands()
     elif (RGB_method.get() == "Spectral_CMF"):
         return Display_RGB_CMF()
-    elif (RGB_method.get() == "Spectral_Reconstruction"):
-        return
+    elif (RGB_method.get() == "Spectral_Reconstruction Mono Channel"):
+        return Display_Spectral_CMF()
+    elif (RGB_method.get() == "Spectral_Reconstruction Multi Channel"):
+        return Display_Spectral_CMF_3Channels()
     else:
         return Display_RGB_CMF()
 
@@ -308,7 +437,7 @@ def Display_RGB_3Bands():
 
     nw, nh = round(coef * w), round(coef * h)
 
-    img = img.resize( ( nw, nh) )
+    img = img.resize( ( nw, nh ) )
 
     photo = ImageTk.PhotoImage(image=img)
     Image_display.config(image=photo)
@@ -418,6 +547,144 @@ def Display_RGB_CMF():
     return RGB
 
 #================================================================================================================================================================================
+ 
+def Display_Spectral_CMF_3Channels():
+    global Bands, Spectra, Resolution_Coef, White_Correction
+
+    CMF_1 = np.array([loadSpectrum()])
+    CMF_2 = np.array([loadSpectrum()])
+    CMF_3 = np.array([loadSpectrum()])
+
+    normalized_spectras, Energies   = normalize_wavelength_sampling(np.transpose(Spectra, (2,0,1)), low_bound = 380, high_bound = 780)
+
+    normalized_CMF_1, Energy_1      = normalize_wavelength_sampling(CMF_1, low_bound = 380, high_bound = 780)
+    Energy_1                        = Energy_1[0]
+
+    normalized_CMF_2, Energy_2      = normalize_wavelength_sampling(CMF_2, low_bound = 380, high_bound = 780)
+    Energy_2                        = Energy_2[0]
+
+    normalized_CMF_3, Energy_3      = normalize_wavelength_sampling(CMF_3, low_bound = 380, high_bound = 780)
+    Energy_3                        = Energy_3[0]
+
+    if  ( Opti_method.get() == "Optimisation Stochastique" ):
+        Coeffs_1 = HSI_Rec_Stochastique( CMF_1, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 1, steps = int( Step_Entry.get() ), nrand = int( Nrand_Entry.get() ) )
+        Coeffs_2 = HSI_Rec_Stochastique( CMF_2, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 1, steps = int( Step_Entry.get() ), nrand = int( Nrand_Entry.get() ) )
+        Coeffs_3 = HSI_Rec_Stochastique( CMF_3, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 1, steps = int( Step_Entry.get() ), nrand = int( Nrand_Entry.get() ) )
+
+    elif( Opti_method.get() == "Optimisation par Recuit Simuler" ):
+        Coeffs_1 = HSI_Rec_Recuit_Simuler( CMF_1, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 1, steps = int( Step_Entry.get() ) )
+        Coeffs_2 = HSI_Rec_Recuit_Simuler( CMF_2, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 1, steps = int( Step_Entry.get() ) )
+        Coeffs_3 = HSI_Rec_Recuit_Simuler( CMF_3, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 1, steps = int( Step_Entry.get() ) )
+
+    elif( Opti_method.get() == "Optimisation multi_echelle" ):
+        Coeffs_1 = HSI_Rec_Stochastique_Multi_Echelle( CMF_1, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 16, levels= 4, steps = int( Step_Entry.get() ) )
+        Coeffs_2 = HSI_Rec_Stochastique_Multi_Echelle( CMF_2, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 16, levels= 4, steps = int( Step_Entry.get() ) )
+        Coeffs_3 = HSI_Rec_Stochastique_Multi_Echelle( CMF_3, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 16, levels= 4, steps = int( Step_Entry.get() ) )
+
+    # ---
+
+    New_Bands = np.zeros(( Bands.shape[0], Bands.shape[1], 3 ))
+
+    for k in range (Bands.shape[2]):
+        New_Bands[:,:,0] += Bands[:,:,k] * Coeffs_1[k]
+        New_Bands[:,:,1] += Bands[:,:,k] * Coeffs_2[k]
+        New_Bands[:,:,2] += Bands[:,:,k] * Coeffs_3[k]
+
+    
+
+    if (WC_method.get() == "RGB White Correction"):
+        New_Bands[:,:,0] /= np.max( New_Bands[:,:,0] )
+        New_Bands[:,:,1] /= np.max( New_Bands[:,:,1] )
+        New_Bands[:,:,2] /= np.max( New_Bands[:,:,2] )
+    else:
+        New_Bands /= np.max(New_Bands)
+
+    New_Bands = New_Bands ** (1 / float( Gamma_Entry.get() ) )
+    New_Bands *= 255
+
+    img = Image.fromarray(New_Bands.astype(np.uint8), 'RGB')
+
+    # Automatic resizing
+    h, w, c = New_Bands.shape
+    max_w = 720.0
+    max_h = 480.0
+
+    Resolution_Coef = min( max_w/float(w), max_h/float(h))
+
+    nw, nh = round(Resolution_Coef * w), round(Resolution_Coef * h)
+
+    img = img.resize( (nw, nh) )
+
+    photo = ImageTk.PhotoImage(image=img)
+    Image_display.config(image=photo)
+    Image_display.image = photo
+
+    root.update()
+
+    def measure_LAP(img, ksize = 3, ddepth = cv2.CV_64F):
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        result = cv2.Laplacian(img, ddepth, ksize = ksize)
+        result = cv2.convertScaleAbs(result)
+
+        w, h = img.shape
+
+        return np.sum(result)
+
+    return New_Bands
+
+#================================================================================================================================================================================
+ 
+def Display_Spectral_CMF():
+    global Bands, Spectra, Resolution_Coef, White_Correction
+
+    CMF = np.array([loadSpectrum()])
+
+    normalized_spectras, Energies   = normalize_wavelength_sampling(np.transpose(Spectra, (2,0,1)), low_bound = 380, high_bound = 780)
+    normalized_CMF, Energy          = normalize_wavelength_sampling(CMF, low_bound = 380, high_bound = 780)
+    normalized_CMF                  = normalized_CMF[0]
+    Energy                          = Energy[0]
+
+    if  ( Opti_method.get() == "Optimisation Stochastique" ):
+        Coeffs = HSI_Rec_Stochastique(CMF, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 1, steps = int( Step_Entry.get() ), nrand = int( Nrand_Entry.get() ), debug= True )
+
+    elif( Opti_method.get() == "Optimisation par Recuit Simuler" ):
+        Coeffs = HSI_Rec_Recuit_Simuler(CMF, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 1, steps = int( Step_Entry.get() ), debug= True )
+
+    elif( Opti_method.get() == "Optimisation multi_echelle" ):
+        Coeffs = HSI_Rec_Stochastique_Multi_Echelle(CMF, Spectra, Criteria= Criteria.get(), low_norm= 380, high_norm= 780, definition= 16, levels= 4, steps = int( Step_Entry.get() ), debug= True )
+
+    # ---
+
+    New_Band = np.zeros(( Bands.shape[0], Bands.shape[1] ))
+
+    for k in range (Bands.shape[2]):
+        New_Band += Bands[:,:,k] * Coeffs[k]
+
+    New_Band *= 255 / np.max( New_Band )
+
+    img = Image.fromarray(New_Band.astype(np.uint8), 'L')
+
+    # Automatic resizing
+    h, w = New_Band.shape
+    max_w = 720.0
+    max_h = 480.0
+
+    Resolution_Coef = min( max_w/float(w), max_h/float(h))
+
+    nw, nh = round(Resolution_Coef * w), round(Resolution_Coef * h)
+
+    img = img.resize( (nw, nh) )
+
+    photo = ImageTk.PhotoImage(image=img)
+    Image_display.config(image=photo)
+    Image_display.image = photo
+
+    root.update()
+
+    return New_Band
+
+#================================================================================================================================================================================
 
 def Display_Pixel_Spectrum(event):
     global Bands, Waves, Ax_Chroma, Ax_Spectrum, Fig_Chroma, Fig_Spectrum, Canvas_Chroma, Canvas_Spectrum
@@ -458,7 +725,7 @@ def Display_Pixel_Spectrum(event):
     Ax_Chroma.set_xlabel('x')
     Ax_Chroma.set_title('CIE 1931 Chromaticity Diagram', color=Theme['color_3'])
 
-    Ax_Chroma.plot(cx, cy, 'ro', color=hex_color, label="Estimation chromaticity", alpha = 0.75) # Chroma
+    Ax_Chroma.plot(cx, cy, 'o', color=hex_color, label="Estimation chromaticity", alpha = 0.75) # Chroma
 
     # Style
     Fig_Chroma.set_facecolor(Theme['color_0'])
@@ -524,7 +791,7 @@ root.configure(background= Theme['color_0'])
 #   - RGB reconstruction
 #================================================================================================================================================================================
 left_pannel = Frame(root, bg = Theme['color_1'])
-left_pannel.grid(column= 0, row= 0, sticky= tk.EW, padx = 5, pady = 5)
+left_pannel.grid(column= 0, row= 0, sticky= tk.EW, padx = 0, pady = 0)
 
 ### LOAD ENVI ###
 LoadEnvi_button = Button(left_pannel, text="Load ENVI", command=Load_ENVI, font=default_font, relief = "flat", bg = Theme['color_4'], activebackground = Theme['color_3'])
@@ -565,17 +832,32 @@ Select_Band_button = Button(left_pannel, text="Display Selected Band", command=D
 Select_Band_button.grid(row= 12, column= 0,  columnspan= 2, sticky= tk.EW, padx = 5, pady = 5)
 
 ### SHOW RGB Reconstruction (Result depend on selected reconstruction method) ###
-Select_Band_button = Button(left_pannel, text="RGB Reconstruction", command=Display_RGB, font=default_font, relief = "flat", bg = Theme['color_4'], activebackground = Theme['color_3'])
-Select_Band_button.grid(row= 13, column= 0, columnspan= 2, sticky= tk.EW, padx = 5, pady = 5)
+Select_Band_button = Button(left_pannel, text="Reconstruction", command=Display_RGB, font=default_font, relief = "flat", bg = Theme['color_4'], activebackground = Theme['color_3'])
+Select_Band_button.grid(row= 13, column= 0, columnspan= 1, sticky= tk.EW, padx = 5, pady = 5)
+
+# Activation of Recalage
+Recal = tk.BooleanVar()
+
+Toggle_Recalage = ttk.Checkbutton(left_pannel, text= "Registration", variable= Recal)
+Toggle_Recalage.grid(row= 13, column= 1, columnspan= 1, sticky= tk.EW, padx = 5, pady = 5)
 
 ### RGB Reconstruction Method Selection ###
-RGB_methods_names = ["3 Bands", "Spectral_CMF", "Spectral_Reconstruction"]
+RGB_methods_names = ["3 Bands", "Spectral_CMF", "Spectral_Reconstruction Mono Channel", "Spectral_Reconstruction Multi Channel"]
 
 RGB_method = StringVar()
 RGB_method.set(RGB_methods_names[0])
 
 RGB_method_menu = OptionMenu(left_pannel, RGB_method, *RGB_methods_names)
 RGB_method_menu.grid(row = 14, column= 0, columnspan= 2, sticky= tk.EW, padx= 5, pady= 5)
+
+### Optimisation method ###
+Opti_methods_names = ["Non Négative Least Square", "Optimisation Stochastique", "Optimisation par Recuit Simuler", "Optimisation multi_echelle"]
+
+Opti_method = StringVar()
+Opti_method.set(Opti_methods_names[0])
+
+Opti_method_menu = OptionMenu(left_pannel, Opti_method, *Opti_methods_names)
+Opti_method_menu.grid(row = 15, column= 0, columnspan= 2, sticky= tk.EW, padx= 5, pady= 5)
 
 ### White Correction Method (Default RGB) ###
 WC_methods_names = ["No White Correction", "RGB White Correction", "Spectral White Correction", "Spectral + RGB White Correction"]
@@ -584,13 +866,34 @@ WC_method = StringVar()
 WC_method.set(WC_methods_names[1])
 
 WC_method_menu = OptionMenu(left_pannel, WC_method, *WC_methods_names)
-WC_method_menu.grid(row = 15, column= 0, columnspan= 2, sticky= tk.EW, padx= 5, pady= 5)
+WC_method_menu.grid(row = 16, column= 0, columnspan= 2, sticky= tk.EW, padx= 5, pady= 5)
 
 ### Gamma ###
-Label(left_pannel, text="Gamma :", font=default_font, foreground= Theme['color_3'], bg = Theme['color_1']).grid(row=16, column=0, sticky='w', padx=5, pady=5)
+Label(left_pannel, text="Gamma :", font=default_font, foreground= Theme['color_3'], bg = Theme['color_1']).grid(row=17, column=0, sticky='w', padx=5, pady=5)
 Gamma_Entry = Entry(left_pannel, font=default_font, foreground= Theme['color_3'], bg = Theme['color_0'])
 Gamma_Entry.insert(1, "1.0")
-Gamma_Entry.grid(row = 16, column= 1, sticky= tk.EW, padx= 5, pady= 5)
+Gamma_Entry.grid(row = 17, column= 1, sticky= tk.EW, padx= 5, pady= 5)
+
+### Step Count ###
+Label(left_pannel, text="Step Count :", font=default_font, foreground= Theme['color_3'], bg = Theme['color_1']).grid(row=18, column=0, sticky='w', padx=5, pady=5)
+Step_Entry = Entry(left_pannel, font=default_font, foreground= Theme['color_3'], bg = Theme['color_0'])
+Step_Entry.insert(100, "100")
+Step_Entry.grid(row = 18, column= 1, sticky= tk.EW, padx= 5, pady= 5)
+
+### N Random ###
+Label(left_pannel, text="Sample Count per Step :", font=default_font, foreground= Theme['color_3'], bg = Theme['color_1']).grid(row=19, column=0, sticky='w', padx=5, pady=5)
+Nrand_Entry = Entry(left_pannel, font=default_font, foreground= Theme['color_3'], bg = Theme['color_0'])
+Nrand_Entry.insert(10000, "10000")
+Nrand_Entry.grid(row = 19, column= 1, sticky= tk.EW, padx= 5, pady= 5)
+
+### Reconstruction Criteria ###
+Criterias = ["SAM", "SGA", "SID", "SCA", "Minkowski_L1", "Minkowski_L2"]
+
+Criteria = StringVar()
+Criteria.set(Criterias[0])
+
+Criteria_menu = OptionMenu(left_pannel, Criteria, *Criterias)
+Criteria_menu.grid(row = 20, column= 0, columnspan= 2, sticky= tk.EW, padx= 5, pady= 5)
 
 #================================================================================================================================================================================
 # Center Pannel for display band / image ...
